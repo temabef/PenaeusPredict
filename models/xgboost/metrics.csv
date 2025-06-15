@@ -1,0 +1,2 @@
+model_name,accuracy,precision,recall,f1,roc_auc
+XGBoost,1.0,1.0,1.0,1.0,1.0

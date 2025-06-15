@@ -1,0 +1,2 @@
+model_name,accuracy,precision,recall,f1,roc_auc
+Logistic Regression,1.0,1.0,1.0,1.0,1.0
