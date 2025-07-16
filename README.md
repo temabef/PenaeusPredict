@@ -203,7 +203,6 @@ docker run -p 8501:8501 penaeuspredict
 ## 📚 **Documentation**
 
 - **[Multi-Disease Design](MULTI_DISEASE_DESIGN.md)**: Technical architecture and design decisions
-- **[Portfolio Enhancement](PORTFOLIO_ENHANCEMENT_SUMMARY.md)**: Project evolution and portfolio value
 - **[Simulated Data Guide](README_SIMULATED_DATA.md)**: Data generation and validation
 
 ## 🔮 **Future Enhancements**
