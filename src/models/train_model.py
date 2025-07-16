@@ -60,9 +60,15 @@ def load_processed_data(base_filename):
         X, y dataframes and preprocessor object
     """
     try:
-        X_path = Path(str(base_filename) + '.X.csv')
-        y_path = Path(str(base_filename) + '.y.csv')
-        preprocessor_path = Path(str(base_filename) + '.preprocessor.pkl')
+        # Convert to Path object if it's a string
+        base_path = Path(base_filename)
+        
+        # Construct file paths correctly
+        X_path = base_path.with_suffix('.X.csv')
+        y_path = base_path.with_suffix('.y.csv')
+        preprocessor_path = base_path.with_suffix('.preprocessor.pkl')
+        
+        logging.info(f"Loading from: {X_path}, {y_path}, {preprocessor_path}")
         
         X = pd.read_csv(X_path)
         y = pd.read_csv(y_path).iloc[:, 0]  # Extract the first column
@@ -364,66 +370,91 @@ def save_model(model, model_name, metrics, feature_importance, shap_data=None):
     
     logging.info(f"Saved {model_name} model and results to {model_path}")
 
+def train_models_for_all_diseases():
+    """Train and save models for all supported diseases."""
+    logging.info("Starting multi-disease model training...")
+    
+    # List of diseases to train
+    diseases = ['wssv', 'ems_ahpnd', 'ihhnv', 'yhv', 'imnv']
+    
+    for disease in diseases:
+        logging.info(f"Training model for {disease}...")
+        
+        # Load processed data for this disease
+        base_filename = PROCESSED_DATA_DIR / f"{disease}_data"
+        X, y, preprocessor = load_processed_data(base_filename)
+        
+        if X is None or y is None or preprocessor is None:
+            logging.warning(f"Skipping {disease} due to missing data.")
+            continue
+        
+        # Split data
+        X_train, X_test, y_train, y_test = split_data(X, y)
+        
+        # Check class balance
+        unique_classes_train = np.unique(y_train)
+        unique_classes_test = np.unique(y_test)
+        
+        if len(unique_classes_train) < 2:
+            logging.warning(f"Skipping {disease}: Only one class in training data ({unique_classes_train})")
+            continue
+            
+        if len(unique_classes_test) < 2:
+            logging.warning(f"Skipping {disease}: Only one class in test data ({unique_classes_test})")
+            continue
+        
+        logging.info(f"Class distribution for {disease}: Train={np.bincount(y_train)}, Test={np.bincount(y_test)}")
+        
+        # Train XGBoost model for this disease
+        model, grid_search = train_xgboost(X_train, y_train)
+        
+        # Evaluate model
+        metrics = evaluate_model(model, X_test, y_test, f"XGBoost_{disease}")
+        
+        # Analyze feature importance
+        feature_importance = analyze_feature_importance(model, X, f"XGBoost_{disease}")
+        
+        # Create disease-specific directory
+        disease_model_dir = MODEL_DIR / disease
+        disease_model_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Save model and artifacts
+        joblib.dump(model, disease_model_dir / "model.pkl")
+        joblib.dump(preprocessor, disease_model_dir / "preprocessor.pkl")
+        
+        # Save feature importance with better error handling
+        if feature_importance is not None:
+            try:
+                # Convert feature importance to DataFrame if it's a dictionary
+                if isinstance(feature_importance, dict):
+                    feature_df = pd.DataFrame({
+                        'feature': feature_importance['feature_names'],
+                        'importance': feature_importance['importances']
+                    })
+                else:
+                    feature_df = feature_importance
+                    
+                feature_df.to_csv(disease_model_dir / "feature_importance.csv", index=False)
+                logging.info(f"Saved feature importance for {disease}")
+            except Exception as e:
+                logging.warning(f"Error saving feature importance for {disease}: {e}")
+        else:
+            logging.warning(f"No feature importance available for {disease}")
+        
+        # Save metrics
+        try:
+            pd.DataFrame([metrics]).to_csv(disease_model_dir / "metrics.csv", index=False)
+            logging.info(f"Saved metrics for {disease}")
+        except Exception as e:
+            logging.warning(f"Error saving metrics for {disease}: {e}")
+        
+        logging.info(f"Saved model and artifacts for {disease} in {disease_model_dir}")
+    
+    logging.info("Multi-disease model training completed!")
+
 def main():
     """Main function to run model training"""
-    logging.info("Starting model training")
-    
-    # Find processed data files
-    processed_files = list(PROCESSED_DATA_DIR.glob("*.X.csv"))
-    if not processed_files:
-        logging.error("No processed data files found. Run data_preprocessing.py first.")
-        return
-    
-    # Use the first processed data file
-    base_filename = processed_files[0].stem[:-2]  # Remove .X suffix
-    base_path = PROCESSED_DATA_DIR / base_filename
-    
-    # Load data
-    X, y, preprocessor = load_processed_data(base_path)
-    if X is None:
-        return
-    
-    # Split data
-    X_train, X_test, y_train, y_test = split_data(X, y)
-    
-    # Train models
-    models = []
-    
-    # Logistic Regression
-    lr_model, lr_cv = train_logistic_regression(X_train, y_train)
-    lr_metrics = evaluate_model(lr_model, X_test, y_test, "Logistic Regression")
-    lr_importance = analyze_feature_importance(lr_model, X, "Logistic Regression")
-    lr_shap = explain_predictions_with_shap(lr_model, X_test, "Logistic Regression")
-    save_model(lr_model, "Logistic Regression", lr_metrics, lr_importance, lr_shap)
-    models.append(("Logistic Regression", lr_model, lr_metrics))
-    
-    # Random Forest
-    rf_model, rf_cv = train_random_forest(X_train, y_train)
-    rf_metrics = evaluate_model(rf_model, X_test, y_test, "Random Forest")
-    rf_importance = analyze_feature_importance(rf_model, X, "Random Forest")
-    rf_shap = explain_predictions_with_shap(rf_model, X_test, "Random Forest")
-    save_model(rf_model, "Random Forest", rf_metrics, rf_importance, rf_shap)
-    models.append(("Random Forest", rf_model, rf_metrics))
-    
-    # XGBoost
-    xgb_model, xgb_cv = train_xgboost(X_train, y_train)
-    xgb_metrics = evaluate_model(xgb_model, X_test, y_test, "XGBoost")
-    xgb_importance = analyze_feature_importance(xgb_model, X, "XGBoost")
-    xgb_shap = explain_predictions_with_shap(xgb_model, X_test, "XGBoost")
-    save_model(xgb_model, "XGBoost", xgb_metrics, xgb_importance, xgb_shap)
-    models.append(("XGBoost", xgb_model, xgb_metrics))
-    
-    # Find best model
-    best_model_name, best_model_obj, best_metrics = max(
-        models, key=lambda x: x[2]['roc_auc']
-    )
-    logging.info(f"Best model: {best_model_name} (ROC AUC: {best_metrics['roc_auc']:.4f})")
-    
-    # Save best model as final model
-    joblib.dump(best_model_obj, MODEL_DIR / "final_model.pkl")
-    joblib.dump(preprocessor, MODEL_DIR / "preprocessor.pkl")
-    
-    logging.info("Model training completed")
+    train_models_for_all_diseases()
 
 if __name__ == "__main__":
     main() 

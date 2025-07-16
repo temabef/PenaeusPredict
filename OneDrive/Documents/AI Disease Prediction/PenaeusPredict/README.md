@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # PenaeusPredict: Multi-Disease Prediction for Shrimp Aquaculture
 
 A machine learning application for predicting disease outbreaks in shrimp aquaculture based on environmental and farm management parameters.
@@ -91,4 +90,3 @@ This project is for demonstration and educational purposes. The predictions are 
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details. 
-=======

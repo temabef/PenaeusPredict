@@ -257,6 +257,40 @@ def preprocess_data(input_file, output_file=None):
     
     return X, y, preprocessor
 
+def preprocess_multi_disease(input_file=None):
+    """Preprocess and save data for each disease in the multi-disease dataset."""
+    if input_file is None:
+        input_file = RAW_DATA_DIR / "multi_disease_data.csv"
+    df = load_dataset(input_file)
+    if df is None or 'disease_type' not in df.columns:
+        logging.error("No multi-disease data or missing 'disease_type' column.")
+        return
+    for disease in df['disease_type'].unique():
+        disease_df = df[df['disease_type'] == disease].copy()
+        # Find the correct target column
+        target_col = f"{disease}_outbreak"
+        if target_col not in disease_df.columns:
+            logging.warning(f"Target column {target_col} not found for {disease}, skipping.")
+            continue
+        # Clean, feature engineer, encode
+        disease_df = clean_data(disease_df)
+        disease_df = feature_engineering(disease_df)
+        X, y, preprocessor, X_processed = encode_categorical_features(disease_df, target_column=target_col), None, None, None
+        # The function above returns only X_processed, y, preprocessor
+        # Let's fix that:
+        X, y, preprocessor = None, None, None
+        try:
+            X, y, preprocessor = encode_categorical_features(disease_df, target_column=target_col)
+        except Exception as e:
+            logging.error(f"Encoding failed for {disease}: {e}")
+            continue
+        # Save processed data
+        base_filename = PROCESSED_DATA_DIR / f"{disease}_data"
+        pd.DataFrame(X.toarray() if hasattr(X, 'toarray') else X).to_csv(f"{base_filename}.X.csv", index=False)
+        pd.DataFrame(y).to_csv(f"{base_filename}.y.csv", index=False)
+        joblib.dump(preprocessor, f"{base_filename}.preprocessor.pkl")
+        logging.info(f"Saved processed data for {disease} to {base_filename}.*")
+
 def main():
     """Main function to run data preprocessing"""
     logging.info("Starting data preprocessing")
@@ -267,16 +301,15 @@ def main():
         logging.error("No raw data files found. Run data_collection.py first.")
         return
     
-    # Process each raw data file
-    for input_file in raw_data_files:
-        filename = input_file.stem
-        output_file = PROCESSED_DATA_DIR / filename
-        
-        logging.info(f"Processing {input_file}")
-        X, y, preprocessor = preprocess_data(input_file, output_file)
-        
-        if X is not None:
-            logging.info(f"Successfully processed {filename} with {X.shape[0]} samples and {X.shape[1]} features")
+    # If multi-disease data exists, preprocess all diseases
+    multi_file = RAW_DATA_DIR / "multi_disease_data.csv"
+    if multi_file.exists():
+        preprocess_multi_disease(multi_file)
+    else:
+        # Fallback to single-disease
+        input_file = RAW_DATA_DIR / "sample_wssv_data.csv"
+        output_file = PROCESSED_DATA_DIR / "sample_wssv_data"
+        preprocess_data(input_file, output_file)
     
     logging.info("Data preprocessing completed")
 
